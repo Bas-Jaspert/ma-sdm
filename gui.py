@@ -1,4 +1,5 @@
 import streamlit as st
+import json
 import geemap.foliumap as geemap
 import ee
 from utils import get_aoi_from_nuts, get_species_data, get_layer_information, get_layer_visualization_params
@@ -6,7 +7,23 @@ from utils import get_aoi_from_nuts, get_species_data, get_layer_information, ge
 
 st.set_page_config(layout="wide")
 
-geemap.ee_initialize()
+@st.cache_resource
+def initialize_gee():
+    try:
+        service_account_info = dict(st.secrets["earthengine"])
+        with tempfile.NamedTemporaryFile(mode='w+', suffix='.json', delete=False) as f:
+            json.dump(service_account_info, f)
+            f.flush()
+            credentials = ee.ServiceAccountCredentials(service_account_info["client_email"], f.name)
+            # Use o project_id das credenciais para inicializar
+            ee.Initialize(credentials, project=credentials.project_id)
+            st.success("GEE initialization success.")
+    except Exception as e:
+        st.error("Error when intializing Google Earth Engine. Verify credentials in st.secrets.")
+        st.error(f"Error details: {e}")
+        st.stop()
+
+initialize_gee()
 
 st.title("GUI Toolbox")
 st.write("This is a simple GUI toolbox using Streamlit.")
@@ -76,6 +93,7 @@ if st.button("Click me"):
 if __name__ == "__main__":
 
     pass
+
 
 
 
