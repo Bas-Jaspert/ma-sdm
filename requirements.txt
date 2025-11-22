@@ -1,5 +1,5 @@
-StringIO
-ee
+
 geemap
 pandas
 geopandas
+
