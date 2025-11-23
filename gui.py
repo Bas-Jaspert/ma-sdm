@@ -23,8 +23,6 @@ st.set_page_config(layout="wide",
 
 if "background_gdf" not in st.session_state:
     st.session_state.background_gdf = load_background_data()
-if "layer" not in st.session_state or st.session_state.layer is None:
-            st.session_state.layer = get_layer_information(st.session_state.year_input)
 
 initialize_gee()
 
@@ -40,7 +38,8 @@ with sdm_tab:
         year_col, species_col, country_col, county_col = st.columns(4, gap="medium")
         with year_col:
             st.number_input("Select Year", min_value=2015, max_value=2024, value=2024, step=1, key="year_input")
-        
+            if "layer" not in st.session_state or st.session_state.layer is None:
+                st.session_state.layer = get_layer_information(st.session_state.year_input)
         with species_col:
             st.text_input("Species Name", value="Lagopus muta", key="species_input")
         
