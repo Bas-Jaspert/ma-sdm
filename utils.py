@@ -1,15 +1,35 @@
 import math
 import os
-from io import StringIO
-
+import tempfile
+import json
+import random
 import requests
+import streamlit as st
 import pandas as pd
 import geopandas as gpd
 import geemap
 import geemap.colormaps as cm
-
+import shapely
+import matplotlib.pyplot as plt
+import numpy as np
 import sys
 import ee
+
+@st.cache_resource
+def initialize_gee():
+    try:
+        service_account_info = dict(st.secrets["earthengine"])
+        with tempfile.NamedTemporaryFile(mode='w+', suffix='.json', delete=False) as f:
+            json.dump(service_account_info, f)
+            f.flush()
+            credentials = ee.ServiceAccountCredentials(service_account_info["client_email"], f.name)
+            # Use o project_id das credenciais para inicializar
+            ee.Initialize(credentials, project=credentials.project_id)
+            st.success("GEE initialization success.")
+    except Exception as e:
+        st.error("Error when intializing Google Earth Engine. Verify credentials in st.secrets.")
+        st.error(f"Error details: {e}")
+        st.stop()
 
 def mask_s2_clouds(image):
   """Masks clouds in a Sentinel-2 image using the QA band.
@@ -177,10 +197,11 @@ def get_layer_information(year: int):
             ee.ImageCollection('ECMWF/ERA5_LAND/HOURLY')
             .filter(ee.Filter.date(f"{year}-01-01", f"{year+1}-01-01"))
             )
+    BIOCLIM = {key: ee.Image("projects/ee-sebasd1991/assets/BioClim").select(key) for key in ee.Image("projects/ee-sebasd1991/assets/BioClim").bandNames().getInfo()}
     terrain = ee.Algorithms.Terrain(ee.Image("USGS/SRTMGL1_003"))
+    canopyHeight = ee.ImageCollection("projects/sat-io/open-datasets/facebook/meta-canopy-height").mosaic()
     layer= {
             "CORINE Land Cover 2018" : ee.Image("COPERNICUS/CORINE/V20/100m/2018").select('landcover'),
-            "BIOCLIM": ee.Image("projects/ee-sebasd1991/assets/BioClim"),
             "elevation" : ee.Image("USGS/SRTMGL1_003").select('elevation'),
             "slope" : terrain.select('slope'),
             "aspect" : terrain.select('aspect'),
@@ -192,38 +213,186 @@ def get_layer_information(year: int):
                     .mean()
                 ),
             "GHMI" : ee.ImageCollection("projects/sat-io/open-datasets/GHM/HM_2022_300M").first().rename('GHMI'),
-            
+            "Trees" : canopyHeight.updateMask(canopyHeight.gte(1)).rename('Trees'),
             "SWE" : era5.select(['snow_depth_water_equivalent'], ['swe']).mean().rename('SWE'),
             "snow_depth" : era5.select(['snow_depth'], ['snow_depth']).mean(),
             "snow_cover" : era5.select(['snow_cover'], ['snow_cover']).mean(),
             "snow_albedo" : era5.select(['snow_albedo'], ['snow_albedo']).mean(),
-            "CHM" : ee.ImageCollection("projects/sat-io/open-datasets/facebook/meta-canopy-height").mosaic().rename('CHM'),
+            "CHM" : canopyHeight.rename('CHM'),
             "NARI" : gee_calculate_scrub_index('nari', year).rename('NARI'),
             "NCRI" : gee_calculate_scrub_index('ncri', year).rename('NCRI')
         }
-    return layer
+    return {**layer, **BIOCLIM}
 
 def get_layer_visualization_params(layer_name: str):
-    paletteHM = ['4c6100','adda25','e2ff9b','ffff73','ffe629','ffd37f','ffaa00','e69808','e60000','a80000','730000'];
-    vis_params = {
-        "elevation": {"min": 0, "max": 4000, "palette": cm.palettes['terrain']},
-        "slope": {"min": 0, "max": 60, "palette": cm.palettes['viridis']},
-        "NDVI": {"min": -1, "max": 1, "palette": cm.palettes['RdYlGn']},
-        "CORINE Land Cover 2018": {"min": 1, "max": 44, "palette": cm.palettes['tab20']},
-        "CHM": {"min": 0, "max": 25, "palette": cm.palettes['viridis']},
-        "NARI": {"min": -1, "max": 1, "palette": cm.palettes['RdYlGn']},
-        "NCRI": {"min": -1, "max": 1, "palette": cm.palettes['RdYlGn']},
-        "GHMI": {"min": 0, "max": 1, "palette": paletteHM},
-        "SWE": {"min": 0, "max": 500, "palette": cm.palettes['Blues']},
-        "snow_depth": {"min": 0, "max": 200, "palette": cm.palettes['Blues']},
-        "snow_cover": {"min": 0, "max": 100, "palette": cm.palettes['Blues']},
-        "snow_albedo": {"min": 0, "max": 1, "palette": cm.palettes['Greys']},
-        "BIOCLIM": {"min": 0, "max": 100, "palette": cm.palettes['viridis']},
-        "aspect": {"min": 0, "max": 360, "palette": cm.palettes['hsv']},
-        "northness": {"min": -1, "max": 1, "palette": cm.palettes['coolwarm']},
-        "eastness": {"min": -1, "max": 1, "palette": cm.palettes['coolwarm']}
-    }
-    return vis_params.get(layer_name, {})
+    try:
+        paletteHM = ['#4c6100','#adda25','#e2ff9b','#ffff73','#ffe629','#ffd37f','#ffaa00','#e69808','#e60000','#a80000','#730000']
+        paletteTrees = ["#4A2354", '#fde725']
+        vis_params = {
+            "elevation": {"min": 0, "max": 4000, "palette": cm.palettes['terrain']},
+            "slope": {"min": 0, "max": 60, "palette": cm.palettes['viridis']},
+            "NDVI": {"min": -1, "max": 1, "palette": cm.palettes['RdYlGn']},
+            # "CORINE Land Cover 2018": {"min": 1, "max": 44, "palette": cm.palettes['tab20']},
+            "CHM": {"min": 0, "max": 25, "palette": cm.palettes['viridis']},
+            "Trees": {"min": 1, "max": 1, "palette": paletteTrees},
+            "NARI": {"min": -1, "max": 1, "palette": cm.palettes['RdYlGn']},
+            "NCRI": {"min": -1, "max": 1, "palette": cm.palettes['RdYlGn']},
+            "GHMI": {"min": 0, "max": 1, "palette": paletteHM},
+            "SWE": {"min": 0, "max": 500, "palette": cm.palettes['Blues']},
+            "snow_depth": {"min": 0, "max": 200, "palette": cm.palettes['Blues']},
+            "snow_cover": {"min": 0, "max": 100, "palette": cm.palettes['Blues']},
+            "snow_albedo": {"min": 0, "max": 1, "palette": cm.palettes['Greys']},
+            "b1": {"min": -30, "max": 50, "palette": cm.palettes['viridis']},
+            "aspect": {"min": 0, "max": 360, "palette": cm.palettes['hsv']},
+            "northness": {"min": -1, "max": 1, "palette": cm.palettes['coolwarm']},
+            "eastness": {"min": -1, "max": 1, "palette": cm.palettes['coolwarm']}
+        }
+        return vis_params.get(layer_name, {})
+    except:
+        return {}
 
+def plot_correlation_heatmap(dataframe, h_size=10, show_labels=False):
+    # Calculate Spearman correlation coefficients
+    correlation_matrix = dataframe.corr(method="spearman")
 
+    # Create a heatmap
+    plt.figure(figsize=(h_size, h_size-2))
+    plt.imshow(correlation_matrix, cmap='coolwarm', interpolation='nearest')
 
+    # Optionally display values on the heatmap
+    if show_labels:
+        for i in range(correlation_matrix.shape[0]):
+            for j in range(correlation_matrix.shape[1]):
+                plt.text(j, i, f"{correlation_matrix.iloc[i, j]:.2f}",
+                         ha='center', va='center', color='white', fontsize=8)
+
+    columns = dataframe.columns.tolist()
+    plt.xticks(range(len(columns)), columns, rotation=90)
+    plt.yticks(range(len(columns)), columns)
+    plt.title("Variables Correlation Matrix")
+    plt.colorbar(label="Spearman Correlation")
+    plt.savefig('correlation_heatmap_plot.png')
+    plt.show()
+
+def load_background_data():
+    bg_df = pd.read_csv(r"./assets/background_data.csv", sep=',')
+    s = bg_df['.geo'].astype(str).str.replace("'", '"').apply(json.loads)
+    geoms = s.apply(shapely.geometry.shape)
+    bg_gdf = gpd.GeoDataFrame(bg_df.drop(['.geo'], axis=1), geometry=geoms, crs='epsg:4326')
+    
+    return bg_gdf
+    
+    
+def compute_sdm(species_gdf: gpd.GeoDataFrame=None, features: list=None, prediction_aoi: ee.Geometry=None, model_type: str="Random Forest", n_trees: int=100, tree_depth: int=5, train_size: float=0.7, year: int=2024):
+    from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
+    from sklearn.metrics import r2_score, roc_auc_score
+    from sklearn.model_selection import train_test_split, KFold, StratifiedKFold, StratifiedShuffleSplit, cross_val_score, GridSearchCV
+    from sklearn.feature_selection import RFE, RFECV, SelectFromModel
+    
+    background_gdf = load_background_data()
+    layer = get_layer_information(year)
+    
+    predictors = ee.Image.cat([layer[feature] for feature in features])
+    presence_gdf = geemap.ee_to_gdf(predictors.sampleRegions(collection=geemap.gdf_to_ee(species_gdf), geometries=True))
+    
+    background_gdf['PresAbs'] = 0
+    presence_gdf['PresAbs'] = 1   
+    
+    presence_gdf = presence_gdf[background_gdf.columns]
+
+    ml_gdf = pd.concat([background_gdf, presence_gdf], axis=0).reset_index(drop=True)
+    ml_gdf.columns = [_.replace(' ','_') for _ in ml_gdf.columns]
+
+    y = ml_gdf['PresAbs']
+    X = ml_gdf[features]
+   
+
+    results = []
+
+    for i in range(10):
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=train_size, stratify=y, shuffle=True)
+        rf = RandomForestClassifier(n_estimators=n_trees, max_samples=0.8, min_samples_leaf=.1, verbose=0, class_weight='balanced_subsample', max_depth=tree_depth)
+        rf.fit(X_train, y_train)
+        results.append([roc_auc_score(y_test, rf.predict_proba(X_test)[:,1])] + rf.feature_importances_.tolist())
+        
+    results_df = pd.DataFrame(results, columns=['roc_auc'] + X.columns.tolist())
+
+    print(results_df['roc_auc'].mean())
+    
+    #partial dependence
+    # from sklearn.inspection import PartialDependenceDisplay, permutation_importance
+
+    # # fig, ax = plt.subplots(figsize=(12, 8))
+    # _, ax = plt.subplots(ncols=4, nrows=2, figsize=(9, 8), constrained_layout=True)
+    # ax = ax.flatten()[:-1]  # remove the last subplot
+
+    # PartialDependenceDisplay.from_estimator(
+    #     rf, X_train, features=X.columns.to_list(), kind='average', ax=ax
+    # )
+    
+    #gee
+    # fc = geemap.gdf_to_ee(ml_gdf)
+    # seed=random.randint(1,1000)
+    # tr_presence_points = fc.filter(ee.Filter.eq('PresAbs', 1)).randomColumn(seed=seed).sort("random").select(bands+['PresAbs'])
+    # tr_pseudo_abs_points = fc.filter(ee.Filter.eq('PresAbs', 0)).randomColumn(seed=seed).sort("random").limit(tr_presence_points.size().getInfo()).select(bands+['PresAbs'])
+    # train_pvals = tr_presence_points.merge(tr_pseudo_abs_points)
+
+    # # Random Forest classifier
+    # classifier = ee.Classifier.smileRandomForest(
+    #     seed=seed,
+    #     numberOfTrees=n_trees,
+    #     maxNodes=tree_depth,
+    #     # shrinkage=0.1, # gradient
+    #     # variablesPerSplit=None,
+    #     minLeafPopulation=round(train_pvals.size().getInfo()*.1, 0),#rf
+    #     bagFraction=0.8, # rf
+    # )
+    # # Presence probability: Habitat suitability map
+    # classifier_pr = classifier.setOutputMode("PROBABILITY").train(
+    #     train_pvals, "PresAbs", bands
+    # )
+    # classified_img_pr = predictors.clip(prediction_aoi).classify(classifier_pr)
+    
+    return rf, results_df#, classified_img_pr
+    
+    
+def plot_hier_clustering(dataframe):
+    from scipy.cluster import hierarchy
+    from scipy.spatial.distance import squareform
+    from scipy.stats import spearmanr
+    from collections import defaultdict
+    
+    X=dataframe.copy().drop('geometry', axis=1)
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 8))
+    corr = spearmanr(X).correlation
+
+    # Ensure the correlation matrix is symmetric
+    corr = (corr + corr.T) / 2
+    np.fill_diagonal(corr, 1)
+
+    # We convert the correlation matrix to a distance matrix before performing
+    # hierarchical clustering using Ward's linkage.
+    distance_matrix = 1 - np.abs(corr)
+    dist_linkage = hierarchy.ward(squareform(distance_matrix))
+    dendro = hierarchy.dendrogram(
+        dist_linkage, labels=X.columns.to_list(), ax=ax1, leaf_rotation=90
+    )
+    dendro_idx = np.arange(0, len(dendro["ivl"]))
+
+    ax2.imshow(corr[dendro["leaves"], :][:, dendro["leaves"]])
+    ax2.set_xticks(dendro_idx)
+    ax2.set_yticks(dendro_idx)
+    ax2.set_xticklabels(dendro["ivl"], rotation="vertical")
+    ax2.set_yticklabels(dendro["ivl"])
+    _ = fig.tight_layout()
+    
+    cluster_ids = hierarchy.fcluster(dist_linkage, .35, criterion="distance")
+    cluster_id_to_feature_ids = defaultdict(list)
+    for idx, cluster_id in enumerate(cluster_ids):
+        cluster_id_to_feature_ids[cluster_id].append(idx)
+    selected_features = [v[0] for v in cluster_id_to_feature_ids.values()]
+    selected_features_names = X.columns[selected_features]
+    selected_features_names
+    
+    
+    return fig, selected_features_names
