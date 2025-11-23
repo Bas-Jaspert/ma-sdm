@@ -6,7 +6,7 @@ import pandas as pd
 import geopandas as gpd
 import ee
 import tempfile
-from utils import load_background_data, get_layer_information, get_aoi_from_nuts, get_species_data, get_layer_visualization_params, plot_correlation_heatmap, compute_sdm, plot_hier_clustering, initialize_gee
+from utils import load_background_data, get_layer_information, get_aoi_from_nuts, get_species_data, get_layer_visualization_params, plot_correlation_heatmap, compute_sdm, plot_hier_clustering, initialize_gee, classify_image_aoi
 
 
 st.set_page_config(layout="wide",
@@ -66,7 +66,7 @@ with sdm_tab:
         
         if st.button("Run SDM"):
             with st.spinner("Running SDM..."):
-                st.session_state.rf, st.session_state.results_df= compute_sdm(
+                st.session_state.rf, st.session_state.results_df, st.session_state.ml_gdf, st.session_state.predictors= compute_sdm(
                                                                                                                     species_gdf=st.session_state.species_gdf,
                                                                                                                     features=list(st.session_state.features_select),
                                                                                                                     prediction_aoi=county_aoi,
@@ -99,11 +99,22 @@ with sdm_tab:
                 Map.addLayer(value.clip(country_aoi), get_layer_visualization_params(key), key, opacity=.5) 
                 Map.addLayer(ee.Image().byte().paint(featureCollection=country_aoi, color=1, width=2), {'palette': 'FF0000'}, "Country AOI", opacity=1)
                 Map.centerObject(country_aoi, 6)
+        if "classified_img_pr" in st.session_state:
+            Map.addLayer(st.session_state.classified_img_pr, {'min': 0, 'max': 1, 'palette': cm.palettes.viridis_r}, 'Habitat suitability')
         if st.session_state.species_gdf is not None:
             Map.addLayer(geemap.gdf_to_ee(st.session_state.species_gdf), {'color':'red'}, "Species Observations", shown=True)
             Map.addLayer(geemap.gdf_to_ee(st.session_state.background_gdf), {'color':'blue'}, "Background data", shown=False)
-        if "classified_img_pr" in st.session_state:
-            Map.addLayer(st.session_state.classified_img_pr, {'min': 0, 'max': 1, 'palette': cm.palettes.viridis_r}, 'Habitat suitability')
+        if st.button("Show SDM Prediction") and "rf" in st.session_state:
+            with st.spinner("Classifying image..."):
+                st.session_state.classified_img_pr = classify_image_aoi(
+                    image=st.session_state.predictors,
+                    aoi=county_aoi,
+                    ml_gdf=st.session_state.ml_gdf,
+                    model=st.session_state.rf,
+                    features=list(st.session_state.features_select)
+                )
+                st.success("Image classified.")
+        
         Map.to_streamlit()
 
     

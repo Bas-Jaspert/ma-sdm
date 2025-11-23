@@ -8,7 +8,6 @@ import streamlit as st
 import pandas as pd
 import geopandas as gpd
 import geemap
-import geemap.colormaps as cm
 import shapely
 import matplotlib.pyplot as plt
 import numpy as np
@@ -228,22 +227,22 @@ def get_layer_visualization_params(layer_name: str):
         paletteHM = ['#4c6100','#adda25','#e2ff9b','#ffff73','#ffe629','#ffd37f','#ffaa00','#e69808','#e60000','#a80000','#730000']
         paletteTrees = ["#4A2354", '#fde725']
         vis_params = {
-            "elevation": {"min": 0, "max": 4000, "palette": cm.palettes['terrain']},
-            "slope": {"min": 0, "max": 60, "palette": cm.palettes['viridis']},
-            "NDVI": {"min": -1, "max": 1, "palette": cm.palettes['RdYlGn']},
-            "CHM": {"min": 0, "max": 25, "palette": cm.palettes['viridis']},
+            "elevation": {"min": 0, "max": 4000, "palette": geemap.colormaps.palettes['terrain']},
+            "slope": {"min": 0, "max": 60, "palette": geemap.colormaps.palettes['viridis']},
+            "NDVI": {"min": -1, "max": 1, "palette": geemap.colormaps.palettes['RdYlGn']},
+            "CHM": {"min": 0, "max": 25, "palette": geemap.colormaps.palettes['viridis']},
             "Trees": {"min": 1, "max": 1, "palette": paletteTrees},
-            "NARI": {"min": -1, "max": 1, "palette": cm.palettes['RdYlGn']},
-            "NCRI": {"min": -1, "max": 1, "palette": cm.palettes['RdYlGn']},
+            "NARI": {"min": -1, "max": 1, "palette": geemap.colormaps.palettes['RdYlGn']},
+            "NCRI": {"min": -1, "max": 1, "palette": geemap.colormaps.palettes['RdYlGn']},
             "GHMI": {"min": 0, "max": 1, "palette": paletteHM},
-            "SWE": {"min": 0, "max": 500, "palette": cm.palettes['Blues']},
-            "snow_depth": {"min": 0, "max": 200, "palette": cm.palettes['Blues']},
-            "snow_cover": {"min": 0, "max": 100, "palette": cm.palettes['Blues']},
-            "snow_albedo": {"min": 0, "max": 1, "palette": cm.palettes['Greys']},
-            "b1": {"min": -30, "max": 50, "palette": cm.palettes['viridis']},
-            "aspect": {"min": 0, "max": 360, "palette": cm.palettes['hsv']},
-            "northness": {"min": -1, "max": 1, "palette": cm.palettes['coolwarm']},
-            "eastness": {"min": -1, "max": 1, "palette": cm.palettes['coolwarm']}
+            "SWE": {"min": 0, "max": 500, "palette": geemap.colormaps.palettes['Blues']},
+            "snow_depth": {"min": 0, "max": 200, "palette": geemap.colormaps.palettes['Blues']},
+            "snow_cover": {"min": 0, "max": 100, "palette": geemap.colormaps.palettes['Blues']},
+            "snow_albedo": {"min": 0, "max": 1, "palette": geemap.colormaps.palettes['Greys']},
+            "b1": {"min": -30, "max": 50, "palette": geemap.colormaps.palettes['viridis']},
+            "aspect": {"min": 0, "max": 360, "palette": geemap.colormaps.palettes['hsv']},
+            "northness": {"min": -1, "max": 1, "palette": geemap.colormaps.palettes['coolwarm']},
+            "eastness": {"min": -1, "max": 1, "palette": geemap.colormaps.palettes['coolwarm']}
         }
         return vis_params.get(layer_name, {})
     except:
@@ -296,10 +295,6 @@ def compute_sdm(species_gdf: gpd.GeoDataFrame=None, features: list=None, predict
     background_gdf['PresAbs'] = 0
     presence_gdf['PresAbs'] = 1   
     
-    st.write(list(background_gdf.columns))
-    st.write(list(presence_gdf.columns))
-    st.write(features)
-    
     presence_gdf = presence_gdf[background_gdf.columns]
 
     ml_gdf = pd.concat([background_gdf, presence_gdf], axis=0).reset_index(drop=True)
@@ -331,31 +326,32 @@ def compute_sdm(species_gdf: gpd.GeoDataFrame=None, features: list=None, predict
     # PartialDependenceDisplay.from_estimator(
     #     rf, X_train, features=X.columns.to_list(), kind='average', ax=ax
     # )
-    
-    #gee
-    # fc = geemap.gdf_to_ee(ml_gdf)
-    # seed=random.randint(1,1000)
-    # tr_presence_points = fc.filter(ee.Filter.eq('PresAbs', 1)).randomColumn(seed=seed).sort("random").select(bands+['PresAbs'])
-    # tr_pseudo_abs_points = fc.filter(ee.Filter.eq('PresAbs', 0)).randomColumn(seed=seed).sort("random").limit(tr_presence_points.size().getInfo()).select(bands+['PresAbs'])
-    # train_pvals = tr_presence_points.merge(tr_pseudo_abs_points)
+    return rf, results_df, ml_gdf, predictors
 
-    # # Random Forest classifier
-    # classifier = ee.Classifier.smileRandomForest(
-    #     seed=seed,
-    #     numberOfTrees=n_trees,
-    #     maxNodes=tree_depth,
-    #     # shrinkage=0.1, # gradient
-    #     # variablesPerSplit=None,
-    #     minLeafPopulation=round(train_pvals.size().getInfo()*.1, 0),#rf
-    #     bagFraction=0.8, # rf
-    # )
-    # # Presence probability: Habitat suitability map
-    # classifier_pr = classifier.setOutputMode("PROBABILITY").train(
-    #     train_pvals, "PresAbs", bands
-    # )
-    # classified_img_pr = predictors.clip(prediction_aoi).classify(classifier_pr)
+def classify_image_aoi(image, aoi, ml_gdf, model, features):
+    fc = geemap.gdf_to_ee(ml_gdf)
+    seed=random.randint(1,1000)
+    tr_presence_points = fc.filter(ee.Filter.eq('PresAbs', 1)).randomColumn(seed=seed).sort("random")
+    tr_pseudo_abs_points = fc.filter(ee.Filter.eq('PresAbs', 0)).randomColumn(seed=seed).sort("random").limit(tr_presence_points.size().getInfo())
+    train_pvals = tr_presence_points.merge(tr_pseudo_abs_points)
+
+    # Random Forest classifier
+    classifier = ee.Classifier.smileRandomForest(
+        seed=seed,
+        numberOfTrees=model.get_params()['n_estimators'],
+        maxNodes=model.get_params()['max_depth'],
+        # shrinkage=0.1, # gradient
+        # variablesPerSplit=None,
+        minLeafPopulation=round(train_pvals.size().getInfo()*.1, 0),#rf
+        bagFraction=0.8, # rf
+    )
+    # Presence probability: Habitat suitability map
+    classifier_pr = classifier.setOutputMode("PROBABILITY").train(
+        train_pvals, "PresAbs", features
+    )
+    classified_img_pr = image.clip(aoi).classify(classifier_pr)
     
-    return rf, results_df#, classified_img_pr
+    return classified_img_pr
     
     
 def plot_hier_clustering(dataframe):
