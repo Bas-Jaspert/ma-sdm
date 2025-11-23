@@ -287,12 +287,11 @@ def compute_sdm(species_gdf: gpd.GeoDataFrame=None, features: list=None, predict
     from sklearn.model_selection import train_test_split, KFold, StratifiedKFold, StratifiedShuffleSplit, cross_val_score, GridSearchCV
     from sklearn.feature_selection import RFE, RFECV, SelectFromModel
     
-    background_gdf = load_background_data()[features+['geometry']]
+    background_gdf = load_background_data()[features+['geometry']].sample(n=species_gdf.shape[0], axis=0)
     layer = get_layer_information(year)
     
     predictors = ee.Image.cat([layer[feature] for feature in features])
-    _ = predictors.sampleRegions(collection=geemap.gdf_to_ee(species_gdf), geometries=True)
-    presence_gdf = geemap.ee_to_gdf(_)
+    presence_gdf = geemap.ee_to_gdf(predictors.sampleRegions(collection=geemap.gdf_to_ee(species_gdf), geometries=True))
     
     background_gdf['PresAbs'] = 0
     presence_gdf['PresAbs'] = 1   
@@ -310,7 +309,7 @@ def compute_sdm(species_gdf: gpd.GeoDataFrame=None, features: list=None, predict
 
     for i in range(10):
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=train_size, stratify=y, shuffle=True)
-        rf = RandomForestClassifier(n_estimators=n_trees, max_samples=0.8, min_samples_leaf=.1, verbose=0, class_weight='balanced_subsample', max_depth=tree_depth)
+        rf = RandomForestClassifier(n_estimators=n_trees, max_samples=0.8, min_samples_leaf=.1, verbose=0, class_weight='balanced', max_depth=tree_depth)
         rf.fit(X_train, y_train)
         results.append([roc_auc_score(y_test, rf.predict_proba(X_test)[:,1])] + rf.feature_importances_.tolist())
         

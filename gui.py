@@ -122,9 +122,11 @@ with sdm_tab:
                 Map.addLayer(geemap.gdf_to_ee(st.session_state.species_gdf), {'color':'red'}, f"Species Observations {st.session_state.species_input}", shown=True)
                 Map.addLayer(geemap.gdf_to_ee(st.session_state.background_gdf), {'color':'blue'}, "Background data", shown=False)
             if st.button("Show SDM Prediction") and "rf" in st.session_state:
-                # if "classified_img_pr" in st.session_state:
-                #     del st.session_state.classified_img_pr
                 with st.spinner("Classifying image..."):
+                    if "rf" in st.session_state:
+                        st.write("✅ Model found.")
+                    else:
+                        st.error("❌ Run the SDM first to see the prediction.")
                     st.session_state.classified_img_pr = classify_image_aoi(
                         image=st.session_state.predictors,
                         aoi=county_aoi,
@@ -133,8 +135,7 @@ with sdm_tab:
                         features=list(st.session_state.features_select)
                     )
                     st.success("Image classified.")
-            else:
-                st.error("Run the SDM first to see the prediction.")
+            
             
             Map.to_streamlit()
 
