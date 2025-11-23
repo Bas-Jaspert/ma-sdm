@@ -1,7 +1,8 @@
 import streamlit as st
 import json
 from io import StringIO
-import geemap.foliumap as geemap
+import geemap.foliumap
+import geemap
 import pandas as pd
 import geopandas as gpd
 import ee
@@ -92,7 +93,7 @@ with sdm_tab:
             st.write(f"Selected features: {list(selected_features)}")
     
     with st.expander("Map View", expanded=True):
-        Map = geemap.Map()
+        Map = geemap.foliumap.Map()
         Map.add_basemap("SATELLITE")
         for key, value in st.session_state.layer.items():
             if key in st.session_state.features_select:
@@ -105,6 +106,8 @@ with sdm_tab:
             Map.addLayer(geemap.gdf_to_ee(st.session_state.species_gdf), {'color':'red'}, "Species Observations", shown=True)
             Map.addLayer(geemap.gdf_to_ee(st.session_state.background_gdf), {'color':'blue'}, "Background data", shown=False)
         if st.button("Show SDM Prediction") and "rf" in st.session_state:
+            # if "classified_img_pr" in st.session_state:
+            #     del st.session_state.classified_img_pr
             with st.spinner("Classifying image..."):
                 st.session_state.classified_img_pr = classify_image_aoi(
                     image=st.session_state.predictors,
@@ -114,6 +117,8 @@ with sdm_tab:
                     features=list(st.session_state.features_select)
                 )
                 st.success("Image classified.")
+        else:
+            st.error("Run the SDM first to see the prediction.")
         
         Map.to_streamlit()
 
