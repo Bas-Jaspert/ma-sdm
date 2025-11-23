@@ -291,7 +291,7 @@ def compute_sdm(species_gdf: gpd.GeoDataFrame=None, features: list=None, predict
     if model_type== "Maxent":
         background_gdf = load_background_data()[features+['geometry']]
     else:
-        background_gdf = load_background_data()[features+['geometry']]
+        background_gdf = load_background_data()[features+['geometry']].sample(n=species_gdf.shape[0], axis=0)
     layer = get_layer_information(year)
     
     predictors = ee.Image.cat([layer[feature] for feature in features])
