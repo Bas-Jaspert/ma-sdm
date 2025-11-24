@@ -95,7 +95,6 @@ with sdm_tab:
                             st.session_state.model, st.session_state.results_df, st.session_state.ml_gdf, st.session_state.predictors= compute_sdm(
                                                                                                                                 species_gdf=st.session_state.species_gdf,
                                                                                                                                 features=list(st.session_state.features_select),
-                                                                                                                                prediction_aoi=st.session_state.county_aoi,
                                                                                                                                 model_type=st.session_state.model_input, 
                                                                                                                                 n_trees=st.session_state.n_trees_input, 
                                                                                                                                 tree_depth=st.session_state.tree_depth_input, 

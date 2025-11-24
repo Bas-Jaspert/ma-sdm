@@ -292,7 +292,7 @@ def load_background_data(path=r"./assets/background_data.csv"):
     return bg_gdf
     
     
-def compute_sdm(species_gdf: gpd.GeoDataFrame=None, features: list=None, prediction_aoi: ee.Geometry=None, model_type: str="Random Forest", n_trees: int=100, tree_depth: int=5, train_size: float=0.7, year: int=2024):
+def compute_sdm(species_gdf: gpd.GeoDataFrame=None, features: list=None, model_type: str="Random Forest", n_trees: int=100, tree_depth: int=5, train_size: float=0.7, year: int=2024):
     """Trains a sdm.
 
     Args:
