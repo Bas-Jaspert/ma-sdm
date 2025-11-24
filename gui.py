@@ -130,7 +130,7 @@ with sdm_tab:
             if "country_input" in st.session_state:
                 Map = load_map_layer(st.session_state.layers_select, st.session_state.country_input)
                 
-                if st.button("Show SDM Prediction") and "model" in st.session_state:
+                if st.button(f"Classify {st.session_state.county_input} Layer") and "model" in st.session_state:
                     with st.spinner("Classifying image..."):
                         if "model" in st.session_state:
                             st.write("✅ Model found.")
